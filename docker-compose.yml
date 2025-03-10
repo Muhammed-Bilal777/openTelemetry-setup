@@ -1,19 +1,52 @@
+# version: "3.8"
+# services:
+#   app:
+#     build: .
+#     ports:
+#       - "3000:3000"
+#     volumes:
+#       - ./src:/usr/src/app/src
+#       - /usr/src/app/node_modules
+#     environment:
+#       - NODE_ENV=production
+#       - MONGO_URI=mongodb://mongo:27017/mydb
+#       - ZIPKIN_ENDPOINT=http://zipkin:9411/api/v2/spans
+#     depends_on:
+#       - mongo
+#       - zipkin
+
+#   mongo:
+#     image: mongo:latest
+#     ports:
+#       - "27017:27017"
+#     volumes:
+#       - mongo-data:/data/db
+
+#   zipkin:
+#     image: openzipkin/zipkin:latest
+#     ports:
+#       - "9411:9411"
+#     environment:
+#       - JAVA_OPTS=-Xmx512m
+
+# volumes:
+#   mongo-data:
+
 version: "3.8"
 services:
   app:
     build: .
     ports:
       - "3000:3000"
-    volumes:
-      - ./src:/usr/src/app/src
-      - /usr/src/app/node_modules
+      - "9090:9090"
     environment:
       - NODE_ENV=production
-      - MONGO_URI=mongodb://mongo:27017/mydb
-      - ZIPKIN_ENDPOINT=http://zipkin:9411/api/v2/spans
+      - MONGO_URI=mongodb://mongo:27017/ecommerce
     depends_on:
       - mongo
-      - zipkin
+      - otel-collector
+    volumes:
+      - ./app.log:/app/app.log
 
   mongo:
     image: mongo:latest
@@ -22,12 +55,48 @@ services:
     volumes:
       - mongo-data:/data/db
 
-  zipkin:
-    image: openzipkin/zipkin:latest
+  prometheus:
+    image: prom/prometheus:latest
     ports:
-      - "9411:9411"
+      - "9091:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
     environment:
-      - JAVA_OPTS=-Xmx512m
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - prometheus
+      - loki
+
+  loki:
+    image: grafana/loki:latest
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./loki-config.yml:/etc/loki/loki-config.yml
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest # Use contrib image
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4318:4318" # HTTP port for OTLP
+    depends_on:
+      - jaeger
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686"
+      - "14250:14250"
 
 volumes:
   mongo-data:
